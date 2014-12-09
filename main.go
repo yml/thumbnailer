@@ -66,12 +66,14 @@ func (tm *thumbnailerMessage) thumbPath(baseName string, width, height int) stri
 func (tm *thumbnailerMessage) generateThumbnails() error {
 	sURL, err := tm.srcURL()
 	if err != nil {
-		log.Fatalln("An error occured while parsing the SrcImage", err)
+		log.Println("An error occured while parsing the SrcImage", err)
+		return err
 	}
 
 	img, err := imaging.Open(sURL.Path)
 	if err != nil {
-		log.Fatalln("An error occured while opening SrcImage", err)
+		log.Println("An error occured while opening SrcImage", err)
+		return err
 	}
 	for _, opt := range tm.Opts {
 		thumb := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
@@ -97,8 +99,7 @@ func (th *ThumbnailerHandler) HandleMessage(m *nsq.Message) error {
 		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
 		return err
 	}
-	tm.generateThumbnails()
-	return nil
+	return tm.generateThumbnails()
 }
 
 func main() {
@@ -112,7 +113,7 @@ func main() {
 
 	if *channel == "" {
 		rand.Seed(time.Now().UnixNano())
-		*channel = fmt.Sprintf("tail%06d#ephemeral", rand.Int()%999999)
+		*channel = fmt.Sprintf("thumbnailer%06d#ephemeral", rand.Int()%999999)
 	}
 
 	if *topic == "" {
