@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
 	"log"
 	"math/rand"
 	"net/url"
@@ -36,6 +37,45 @@ func init() {
 	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
 }
 
+type imageOpenSaverError struct {
+	url *url.URL
+}
+
+func (e imageOpenSaverError) Error() string {
+	return fmt.Sprintf("imageOpenSaverError with URL:%v", e.url)
+}
+
+// ImageOpenSaver interface that can Open and Close images from a given backend:fs,  s3, ...
+type ImageOpenSaver interface {
+	Open() (image.Image, error)
+	Save(img image.Image) error
+}
+
+// filesystem implementation of the ImageOpenSaver interface
+type fsImageOpenSaver struct {
+	URL *url.URL
+}
+
+func (s fsImageOpenSaver) Open() (image.Image, error) {
+	return imaging.Open(s.URL.Path)
+}
+
+func (s fsImageOpenSaver) Save(img image.Image) error {
+	return imaging.Save(img, s.URL.Path)
+}
+
+// NewImageOpenSaver return the relevant implementation of ImageOpenSaver based on
+// the url.Scheme
+func NewImageOpenSaver(url *url.URL) (ImageOpenSaver, error) {
+	switch url.Scheme {
+	case "file":
+		return &fsImageOpenSaver{url}, nil
+	default:
+		return nil, imageOpenSaverError{url}
+	}
+
+}
+
 type thumbnailOpt struct {
 	Width, Height int
 }
@@ -46,53 +86,57 @@ type thumbnailerMessage struct {
 	Opts      []thumbnailOpt
 }
 
-func (tm *thumbnailerMessage) srcURL() (*url.URL, error) {
-	return url.Parse(tm.SrcImage)
-}
-
-func (tm *thumbnailerMessage) dstURL() (*url.URL, error) {
-	return url.Parse(tm.DstFolder)
-}
-
-func (tm *thumbnailerMessage) thumbPath(baseName string, width, height int) string {
-	fURL, err := tm.dstURL()
+func (tm *thumbnailerMessage) thumbURL(baseName string, width, height int) *url.URL {
+	fURL, err := url.Parse(tm.DstFolder)
 	if err != nil {
 		log.Fatalln("An error occured while parsing the DstFolder", err)
 	}
 
-	return filepath.Join(fURL.Path, fmt.Sprintf("%s-%d_%d.jpeg", baseName, width, height))
+	fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s-%d_%d.jpeg", baseName, width, height))
+	return fURL
 }
 
 func (tm *thumbnailerMessage) generateThumbnails() error {
-	sURL, err := tm.srcURL()
+	sURL, err := url.Parse(tm.SrcImage)
 	if err != nil {
 		log.Println("An error occured while parsing the SrcImage", err)
 		return err
 	}
-
-	img, err := imaging.Open(sURL.Path)
+	src, err := NewImageOpenSaver(sURL)
+	if err != nil {
+		log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+		return err
+	}
+	img, err := src.Open()
 	if err != nil {
 		log.Println("An error occured while opening SrcImage", err)
 		return err
 	}
 	for _, opt := range tm.Opts {
-		thumb := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
-		tp := tm.thumbPath(filepath.Base(sURL.Path), opt.Width, opt.Height)
-		log.Println("Generating thumb:", tp)
-		err := imaging.Save(thumb, tp)
+		thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+		thumbURL := tm.thumbURL(filepath.Base(sURL.Path), opt.Width, opt.Height)
+		log.Println("Generating thumb:", thumbURL)
+
+		thumb, err := NewImageOpenSaver(thumbURL)
 		if err != nil {
-			log.Fatalln("An error occured while saving the thumb", tp, err)
+			log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+			return err
+		}
+		err = thumb.Save(thumbImg)
+		if err != nil {
+			log.Println("An error occured while saving the thumb", err)
+			return err
 		}
 	}
 	return nil
 }
 
-type ThumbnailerHandler struct {
+type thumbnailerHandler struct {
 	sourceImage      string
 	thumbnailCounter int
 }
 
-func (th *ThumbnailerHandler) HandleMessage(m *nsq.Message) error {
+func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
 	tm := thumbnailerMessage{}
 	err := json.Unmarshal(m.Body, &tm)
 	if err != nil {
@@ -143,7 +187,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	consumer.AddHandler(&ThumbnailerHandler{})
+	consumer.AddHandler(&thumbnailerHandler{})
 
 	err = consumer.ConnectToNSQDs(nsqdTCPAddrs)
 	if err != nil {
