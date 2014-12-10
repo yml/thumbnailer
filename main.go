@@ -112,21 +112,38 @@ func (tm *thumbnailerMessage) generateThumbnails() error {
 		log.Println("An error occured while opening SrcImage", err)
 		return err
 	}
+	errorChan := make(chan error, 1)
 	for _, opt := range tm.Opts {
-		thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
-		thumbURL := tm.thumbURL(filepath.Base(sURL.Path), opt.Width, opt.Height)
-		log.Println("Generating thumb:", thumbURL)
+		go func(errorChan chan error, opt thumbnailOpt) {
+			thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+			thumbURL := tm.thumbURL(filepath.Base(sURL.Path), opt.Width, opt.Height)
+			log.Println("generating thumb:", thumbURL)
 
-		thumb, err := NewImageOpenSaver(thumbURL)
-		if err != nil {
-			log.Println("An error occured while creating an instance of ImageOpenSaver", err)
-			return err
+			thumb, err := NewImageOpenSaver(thumbURL)
+			if err != nil {
+				log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+				errorChan <- err
+				return
+			}
+			err = thumb.Save(thumbImg)
+			if err != nil {
+				log.Println("An error occured while saving the thumb", err)
+				errorChan <- err
+				return
+			}
+			errorChan <- nil
+			return
+		}(errorChan, opt)
+	}
+
+	for i := 0; i < len(tm.Opts); i++ {
+		select {
+		case err := <-errorChan:
+			if err != nil {
+				return err
+			}
 		}
-		err = thumb.Save(thumbImg)
-		if err != nil {
-			log.Println("An error occured while saving the thumb", err)
-			return err
-		}
+
 	}
 	return nil
 }
