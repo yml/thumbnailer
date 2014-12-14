@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,12 +12,15 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/bitly/go-nsq"
 	"github.com/bitly/nsq/util"
 	"github.com/disintegration/imaging"
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/s3"
 )
 
 var (
@@ -29,12 +33,23 @@ var (
 	consumerOpts     = util.StringArray{}
 	nsqdTCPAddrs     = util.StringArray{}
 	lookupdHTTPAddrs = util.StringArray{}
+	awsAuth          aws.Auth
 )
+
+func newAwsAuth() aws.Auth {
+	// Authenticate and Create an aws S3 service
+	auth, err := aws.EnvAuth()
+	if err != nil {
+		panic(err.Error())
+	}
+	return auth
+}
 
 func init() {
 	flag.Var(&consumerOpts, "consumer-opt", "option to passthrough to nsq.Consumer (may be given multiple times, http://godoc.org/github.com/bitly/go-nsq#Config)")
 	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
 	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
+	awsAuth = newAwsAuth()
 }
 
 type imageOpenSaverError struct {
@@ -64,12 +79,63 @@ func (s fsImageOpenSaver) Save(img image.Image) error {
 	return imaging.Save(img, s.URL.Path)
 }
 
+// s3 implementation of the s3ImageOpenSaver interface
+type s3ImageOpenSaver struct {
+	URL *url.URL
+}
+
+func (s s3ImageOpenSaver) Open() (image.Image, error) {
+	conn := s3.New(awsAuth, aws.USEast)
+	bucket := conn.Bucket(s.URL.Host)
+	reader, err := bucket.GetReader(s.URL.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return imaging.Decode(reader)
+}
+
+func (s s3ImageOpenSaver) Save(img image.Image) error {
+	var buffer bytes.Buffer
+	formats := map[string]imaging.Format{
+		".jpg":  imaging.JPEG,
+		".jpeg": imaging.JPEG,
+		".png":  imaging.PNG,
+		".tif":  imaging.TIFF,
+		".tiff": imaging.TIFF,
+		".bmp":  imaging.BMP,
+		".gif":  imaging.GIF,
+	}
+	ext := strings.ToLower(filepath.Ext(s.URL.Path))
+	f, ok := formats[ext]
+	if !ok {
+		return imaging.ErrUnsupportedFormat
+	}
+	err := imaging.Encode(&buffer, img, f)
+	if err != nil {
+		log.Println("An error occured while encoding ", s.URL)
+		return err
+	}
+	conn := s3.New(awsAuth, aws.USEast)
+	bucket := conn.Bucket(s.URL.Host)
+
+	err = bucket.Put(s.URL.Path, buffer.Bytes(), fmt.Sprintf("image/%s", imaging.JPEG), s3.PublicRead)
+	if err != nil {
+		log.Println("An error occured while putting on S3", s.URL)
+		return err
+	}
+	return nil
+
+}
+
 // NewImageOpenSaver return the relevant implementation of ImageOpenSaver based on
 // the url.Scheme
 func NewImageOpenSaver(url *url.URL) (ImageOpenSaver, error) {
 	switch url.Scheme {
 	case "file":
 		return &fsImageOpenSaver{url}, nil
+	case "s3":
+		return &s3ImageOpenSaver{url}, nil
 	default:
 		return nil, imageOpenSaverError{url}
 	}
