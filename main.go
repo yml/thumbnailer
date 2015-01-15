@@ -27,6 +27,7 @@ var (
 	showVersion = flag.Bool("version", false, "print version string")
 	topic       = flag.String("topic", "", "NSQ topic")
 	channel     = flag.String("channel", "", "NSQ channel")
+	concurrency = flag.Int("concurrency", 1, "Handler concurrency default is 1")
 
 	maxInFlight = flag.Int("max-in-flight", 200, "max number of messages to allow in flight")
 
@@ -142,24 +143,69 @@ func NewImageOpenSaver(url *url.URL) (ImageOpenSaver, error) {
 
 }
 
+type Rectangle struct {
+	Min [2]int `json:"min"`
+	Max [2]int `json:"max"`
+}
+
+func (r *Rectangle) String() string {
+	return fmt.Sprintf("min: %v, max: %v", r.Min, r.Max)
+}
+
+func (r *Rectangle) newImageRect() image.Rectangle {
+	return image.Rect(r.Min[0], r.Min[1], r.Max[0], r.Max[1])
+}
+
 type thumbnailOpt struct {
-	Width, Height int
+	Rect   *Rectangle `json:"rect,omitempty"`
+	Width  int        `json:"width"`
+	Height int        `json:"height"`
 }
 
 type thumbnailerMessage struct {
-	SrcImage  string
-	DstFolder string
-	Opts      []thumbnailOpt
+	SrcImage  string         `json:"srcImage"`
+	DstFolder string         `json:"dstFolder"`
+	Opts      []thumbnailOpt `json:"opts"`
 }
 
-func (tm *thumbnailerMessage) thumbURL(baseName string, width, height int) *url.URL {
+func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.URL {
 	fURL, err := url.Parse(tm.DstFolder)
 	if err != nil {
 		log.Fatalln("An error occured while parsing the DstFolder", err)
 	}
 
-	fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s-%d_%d.jpeg", baseName, width, height))
+	if opt.Rect != nil {
+		fURL.Path = filepath.Join(
+			fURL.Path,
+			fmt.Sprintf("%s_c-%d-%d-%d-%d_s-%d-%d.jpeg", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height))
+	} else {
+		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s-%d-%d.jpeg", baseName, opt.Width, opt.Height))
+	}
 	return fURL
+}
+
+func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
+	if opt.Rect != nil {
+		img = imaging.Crop(img, opt.Rect.newImageRect())
+	}
+	thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+	thumbURL := tm.thumbURL(filepath.Base(srcURL.Path), opt)
+	log.Println("generating thumb:", thumbURL)
+
+	thumb, err := NewImageOpenSaver(thumbURL)
+	if err != nil {
+		log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+		errorChan <- err
+		return
+	}
+	err = thumb.Save(thumbImg)
+	if err != nil {
+		log.Println("An error occured while saving the thumb", err)
+		errorChan <- err
+		return
+	}
+	errorChan <- nil
+	return
 }
 
 func (tm *thumbnailerMessage) generateThumbnails() error {
@@ -180,26 +226,7 @@ func (tm *thumbnailerMessage) generateThumbnails() error {
 	}
 	errorChan := make(chan error, 1)
 	for _, opt := range tm.Opts {
-		go func(errorChan chan error, opt thumbnailOpt) {
-			thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
-			thumbURL := tm.thumbURL(filepath.Base(sURL.Path), opt.Width, opt.Height)
-			log.Println("generating thumb:", thumbURL)
-
-			thumb, err := NewImageOpenSaver(thumbURL)
-			if err != nil {
-				log.Println("An error occured while creating an instance of ImageOpenSaver", err)
-				errorChan <- err
-				return
-			}
-			err = thumb.Save(thumbImg)
-			if err != nil {
-				log.Println("An error occured while saving the thumb", err)
-				errorChan <- err
-				return
-			}
-			errorChan <- nil
-			return
-		}(errorChan, opt)
+		go tm.generateThumbnail(errorChan, sURL, img, opt)
 	}
 
 	for i := 0; i < len(tm.Opts); i++ {
@@ -270,7 +297,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	consumer.AddHandler(&thumbnailerHandler{})
+	fmt.Println("concurrency: ", *concurrency)
+	consumer.AddConcurrentHandlers(&thumbnailerHandler{}, *concurrency)
 
 	err = consumer.ConnectToNSQDs(nsqdTCPAddrs)
 	if err != nil {
