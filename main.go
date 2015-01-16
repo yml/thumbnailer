@@ -24,13 +24,11 @@ import (
 )
 
 var (
-	showVersion = flag.Bool("version", false, "print version string")
-	topic       = flag.String("topic", "", "NSQ topic")
-	channel     = flag.String("channel", "", "NSQ channel")
-	concurrency = flag.Int("concurrency", 1, "Handler concurrency default is 1")
-
-	maxInFlight = flag.Int("max-in-flight", 200, "max number of messages to allow in flight")
-
+	showVersion      = flag.Bool("version", false, "print version string")
+	topic            = flag.String("topic", "", "NSQ topic")
+	channel          = flag.String("channel", "", "NSQ channel")
+	concurrency      = flag.Int("concurrency", 1, "Handler concurrency default is 1")
+	maxInFlight      = flag.Int("max-in-flight", 200, "max number of messages to allow in flight")
 	consumerOpts     = util.StringArray{}
 	nsqdTCPAddrs     = util.StringArray{}
 	lookupdHTTPAddrs = util.StringArray{}
