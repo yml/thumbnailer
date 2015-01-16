@@ -183,6 +183,7 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 }
 
 func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
+	timerStart := time.Now()
 	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
 		img = imaging.Crop(img, opt.Rect.newImageRect())
@@ -195,8 +196,10 @@ func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	}
 
 	thumbURL := tm.thumbURL(filepath.Base(srcURL.Path), opt)
-	log.Println("generating thumb:", thumbURL)
+	timerThumbDone := time.Now()
+	log.Println("thumb :", thumbURL, " generated in : ", timerThumbDone.Sub(timerStart))
 
+	timerSaveStart := time.Now()
 	thumb, err := NewImageOpenSaver(thumbURL)
 	if err != nil {
 		log.Println("An error occured while creating an instance of ImageOpenSaver", err)
@@ -210,6 +213,8 @@ func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 		return
 	}
 	errorChan <- nil
+	timerEnd := time.Now()
+	log.Println("thumb :", thumbURL, " saved in : ", timerEnd.Sub(timerSaveStart))
 	return
 }
 
