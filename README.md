@@ -25,7 +25,7 @@ nsq_tail -lookupd-http-address=127.0.0.1:4161 -topic=test
 ## Start nsq_thumbnailer
 
 ```
-go run main.go --topic=test --lookupd-http-address=127.0.0.1:4161
+go run main.go --topic=test --lookupd-http-address=127.0.0.1:4161 --concurrency=10
 ```
 
 ## send messages

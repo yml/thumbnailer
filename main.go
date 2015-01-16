@@ -143,21 +143,21 @@ func NewImageOpenSaver(url *url.URL) (ImageOpenSaver, error) {
 
 }
 
-type Rectangle struct {
+type rectangle struct {
 	Min [2]int `json:"min"`
 	Max [2]int `json:"max"`
 }
 
-func (r *Rectangle) String() string {
+func (r *rectangle) String() string {
 	return fmt.Sprintf("min: %v, max: %v", r.Min, r.Max)
 }
 
-func (r *Rectangle) newImageRect() image.Rectangle {
+func (r *rectangle) newImageRect() image.Rectangle {
 	return image.Rect(r.Min[0], r.Min[1], r.Max[0], r.Max[1])
 }
 
 type thumbnailOpt struct {
-	Rect   *Rectangle `json:"rect,omitempty"`
+	Rect   *rectangle `json:"rect,omitempty"`
 	Width  int        `json:"width"`
 	Height int        `json:"height"`
 }
