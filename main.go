@@ -35,6 +35,13 @@ var (
 	awsAuth          aws.Auth
 )
 
+func init() {
+	flag.Var(&consumerOpts, "consumer-opt", "option to passthrough to nsq.Consumer (may be given multiple times, http://godoc.org/github.com/bitly/go-nsq#Config)")
+	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
+	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
+	awsAuth = newAwsAuth()
+}
+
 func newAwsAuth() aws.Auth {
 	// Authenticate and Create an aws S3 service
 	auth, err := aws.EnvAuth()
@@ -42,13 +49,6 @@ func newAwsAuth() aws.Auth {
 		panic(err.Error())
 	}
 	return auth
-}
-
-func init() {
-	flag.Var(&consumerOpts, "consumer-opt", "option to passthrough to nsq.Consumer (may be given multiple times, http://godoc.org/github.com/bitly/go-nsq#Config)")
-	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
-	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
-	awsAuth = newAwsAuth()
 }
 
 type imageOpenSaverError struct {
@@ -124,7 +124,6 @@ func (s s3ImageOpenSaver) Save(img image.Image) error {
 		return err
 	}
 	return nil
-
 }
 
 // NewImageOpenSaver return the relevant implementation of ImageOpenSaver based on
@@ -138,7 +137,6 @@ func NewImageOpenSaver(url *url.URL) (ImageOpenSaver, error) {
 	default:
 		return nil, imageOpenSaverError{url}
 	}
-
 }
 
 type rectangle struct {
@@ -176,6 +174,8 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 		fURL.Path = filepath.Join(
 			fURL.Path,
 			fmt.Sprintf("%s_c-%d-%d-%d-%d_s-%d-%d.jpeg", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height))
+	} else if opt.Width == 0 && opt.Height == 0 {
+		fURL.Path = filepath.Join(fURL.Path, baseName)
 	} else {
 		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s-%d-%d.jpeg", baseName, opt.Width, opt.Height))
 	}
@@ -183,10 +183,17 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 }
 
 func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
+	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
 		img = imaging.Crop(img, opt.Rect.newImageRect())
 	}
-	thumbImg := imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+
+	if opt.Width == 0 && opt.Height == 0 {
+		thumbImg = imaging.Clone(img)
+	} else {
+		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+	}
+
 	thumbURL := tm.thumbURL(filepath.Base(srcURL.Path), opt)
 	log.Println("generating thumb:", thumbURL)
 
