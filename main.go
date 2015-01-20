@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"math"
 	"math/rand"
 	"net/url"
 	"os"
@@ -40,6 +41,18 @@ func init() {
 	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
 	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
 	awsAuth = newAwsAuth()
+}
+
+// This function used internally to convert any image type to NRGBA if needed.
+// copied from `imaging`
+func toNRGBA(img image.Image) *image.NRGBA {
+	srcBounds := img.Bounds()
+	if srcBounds.Min.X == 0 && srcBounds.Min.Y == 0 {
+		if src0, ok := img.(*image.NRGBA); ok {
+			return src0
+		}
+	}
+	return imaging.Clone(img)
 }
 
 func newAwsAuth() aws.Auth {
@@ -182,6 +195,30 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 	return fURL
 }
 
+func (tm *thumbnailerMessage) maxThumbnail(src image.Image) (maxW, maxH int) {
+	srcW := src.Bounds().Max.X
+	srcH := src.Bounds().Max.Y
+	for _, opt := range tm.Opts {
+		dstW, dstH := opt.Width, opt.Height
+		// if new width or height is 0 then preserve aspect ratio, minimum 1px
+		if dstW == 0 {
+			tmpW := float64(dstH) * float64(srcW) / float64(srcH)
+			dstW = int(math.Max(1.0, math.Floor(tmpW+0.5)))
+		}
+		if dstH == 0 {
+			tmpH := float64(dstW) * float64(srcH) / float64(srcW)
+			dstH = int(math.Max(1.0, math.Floor(tmpH+0.5)))
+		}
+		if dstW > maxW {
+			maxW = dstW
+		}
+		if dstH > maxH {
+			maxH = dstH
+		}
+	}
+	return maxW, maxH
+}
+
 func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
 	timerStart := time.Now()
 	var thumbImg *image.NRGBA
@@ -190,7 +227,7 @@ func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	}
 
 	if opt.Width == 0 && opt.Height == 0 {
-		thumbImg = imaging.Clone(img)
+		thumbImg = toNRGBA(img)
 	} else {
 		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
 	}
@@ -234,6 +271,17 @@ func (tm *thumbnailerMessage) generateThumbnails() error {
 		log.Println("An error occured while opening SrcImage", err)
 		return err
 	}
+	// From now on we will deal with an NRGBA image
+	img = toNRGBA(img)
+	fmt.Println("image Bounds: ", img.Bounds())
+
+	// Resize the src image to the biggest thumbs. The resized image will be used to generate all the thumbs
+	if len(tm.Opts) > 1 {
+		maxW, maxH := tm.maxThumbnail(img)
+		fmt.Println("thumbnail max: ", maxW, maxH, "for :", tm.Opts)
+		img = imaging.Resize(img, maxW, maxH, imaging.CatmullRom)
+	}
+
 	errorChan := make(chan error, 1)
 	for _, opt := range tm.Opts {
 		go tm.generateThumbnail(errorChan, sURL, img, opt)
