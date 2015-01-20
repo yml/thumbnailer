@@ -195,7 +195,9 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 	return fURL
 }
 
-func (tm *thumbnailerMessage) maxThumbnail(src image.Image) (maxW, maxH int) {
+// Resize the src image to the biggest thumb sizes in tm.opts.
+func (tm *thumbnailerMessage) maxThumbnail(src image.Image) image.Image {
+	maxW, maxH := 0, 0
 	srcW := src.Bounds().Max.X
 	srcH := src.Bounds().Max.Y
 	for _, opt := range tm.Opts {
@@ -216,7 +218,8 @@ func (tm *thumbnailerMessage) maxThumbnail(src image.Image) (maxW, maxH int) {
 			maxH = dstH
 		}
 	}
-	return maxW, maxH
+	fmt.Println("thumbnail max: ", maxW, maxH, "for :", tm.Opts)
+	return imaging.Resize(src, maxW, maxH, imaging.CatmullRom)
 }
 
 func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
@@ -275,11 +278,9 @@ func (tm *thumbnailerMessage) generateThumbnails() error {
 	img = toNRGBA(img)
 	fmt.Println("image Bounds: ", img.Bounds())
 
-	// Resize the src image to the biggest thumbs. The resized image will be used to generate all the thumbs
 	if len(tm.Opts) > 1 {
-		maxW, maxH := tm.maxThumbnail(img)
-		fmt.Println("thumbnail max: ", maxW, maxH, "for :", tm.Opts)
-		img = imaging.Resize(img, maxW, maxH, imaging.CatmullRom)
+		// The resized image will be used to generate all the thumbs
+		img = tm.maxThumbnail(img)
 	}
 
 	errorChan := make(chan error, 1)
