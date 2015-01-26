@@ -15,12 +15,14 @@ import (
 )
 
 var (
-	supportedExt = []string{".jpeg", ".jpg", ".gif"}
-	srcDir       string
-	dstDir       string
-	thumbOpts    string
-	postURL      string
-	tOpts        []nsqthumbnailer.ThumbnailOpt
+	supportedExt      = []string{".jpeg", ".jpg", ".gif"}
+	srcDir            string
+	srcPath           string
+	dstDir            string
+	thumbOpts         string
+	postURL           string
+	preserveStructure bool
+	tOpts             []nsqthumbnailer.ThumbnailOpt
 )
 
 func init() {
@@ -28,12 +30,23 @@ func init() {
 	flag.StringVar(&dstDir, "dst-directory", "", "Destination Directory.")
 	flag.StringVar(&thumbOpts, "thumbnail-options", "", "Thumbnail options")
 	flag.StringVar(&postURL, "post-url", "", "Url to post the thumbnail generation request")
+	flag.BoolVar(&preserveStructure, "preserve-structure", false, "Preseve the folder structure from `src-directory` to `dst-directory`")
 }
 
 func thumbnailFileRequest(file string) error {
+	var dstPath string
+	if preserveStructure {
+		rel, err := filepath.Rel(srcPath, file)
+		if err != nil {
+			return fmt.Errorf("[ERROR] failed to retrieve the relative path", err)
+		}
+		dstPath = fmt.Sprintf("%s%s", dstDir, filepath.Dir(rel))
+	} else {
+		dstPath = dstDir
+	}
 	tmJson, err := json.Marshal(nsqthumbnailer.ThumbnailerMessage{
 		SrcImage:  fmt.Sprintf("file://%s", file),
-		DstFolder: dstDir,
+		DstFolder: dstPath,
 		Opts:      tOpts,
 	})
 
@@ -108,7 +121,8 @@ func main() {
 	}
 
 	if srcURL.Scheme == "file" {
-		fileWalk(srcURL.Path)
+		srcPath = srcURL.Path
+		fileWalk(srcPath)
 		return
 	} else {
 		fmt.Printf("\nsrc-directory scheme (%s) is not supported\n\n", srcURL.Scheme)
