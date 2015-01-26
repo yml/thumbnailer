@@ -6,6 +6,7 @@ import (
 	"image"
 	"log"
 	"math"
+	"mime"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -112,7 +113,7 @@ func (s s3ImageOpenSaver) Save(img image.Image) error {
 	conn := s3.New(awsAuth, aws.USEast)
 	bucket := conn.Bucket(s.URL.Host)
 
-	err = bucket.Put(s.URL.Path, buffer.Bytes(), fmt.Sprintf("image/%s", imaging.JPEG), s3.PublicRead)
+	err = bucket.Put(s.URL.Path, buffer.Bytes(), mime.TypeByExtension(ext), s3.PublicRead)
 	if err != nil {
 		log.Println("An error occured while putting on S3", s.URL)
 		return err
@@ -163,15 +164,16 @@ func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) *url.U
 	if err != nil {
 		log.Fatalln("An error occured while parsing the DstFolder", err)
 	}
-
+	// TODO (yml): I am pretty sure that we do not really want to always do this.
+	ext := strings.ToLower(filepath.Ext(tm.SrcImage))
 	if opt.Rect != nil {
 		fURL.Path = filepath.Join(
 			fURL.Path,
-			fmt.Sprintf("%s_c%d-%d-%d-%d_s%dx%d.jpg", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height))
+			fmt.Sprintf("%s_c%d-%d-%d-%d_s%dx%d%s", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height, ext))
 	} else if opt.Width == 0 && opt.Height == 0 {
 		fURL.Path = filepath.Join(fURL.Path, baseName)
 	} else {
-		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s%dx%d.jpg", baseName, opt.Width, opt.Height))
+		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s%dx%d%s", baseName, opt.Width, opt.Height, ext))
 	}
 	return fURL
 }
