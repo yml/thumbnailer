@@ -8,14 +8,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/yml/nsqthumbnailer"
 )
 
 var (
-	supportedExt      = []string{".jpeg", ".jpg", ".gif"}
+	supportedExt = []string{
+		".jpeg", ".jpg", ".gif", ".tiff", ".tif", ".png", ".bmp"}
 	srcDir            string
 	srcPath           string
 	dstDir            string
@@ -57,11 +58,12 @@ func thumbnailFileRequest(file string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("[ERROR] Status code for the thumbnail request %d", resp.StatusCode)
 	}
+	defer resp.Body.Close()
 	return nil
 }
 
 func fileWalkFn(file string, info os.FileInfo, err error) error {
-	ext := path.Ext(file)
+	ext := strings.ToLower(filepath.Ext(file))
 	if !info.IsDir() {
 		for _, e := range supportedExt {
 			if e == ext {
@@ -73,8 +75,8 @@ func fileWalkFn(file string, info os.FileInfo, err error) error {
 				return nil
 			}
 		}
-		fmt.Println("[ERROR] This extension is not supported:", file)
-		return filepath.SkipDir
+		fmt.Println("[ERROR] This extension is not supported:", ext, file)
+		return nil
 	}
 	return nil
 }
