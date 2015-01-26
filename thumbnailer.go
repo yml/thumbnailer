@@ -1,45 +1,26 @@
-package main
+package nsqthumbnailer
 
 import (
 	"bytes"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"image"
 	"log"
 	"math"
-	"math/rand"
 	"net/url"
-	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/bitly/go-nsq"
-	"github.com/bitly/nsq/util"
 	"github.com/disintegration/imaging"
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 )
 
 var (
-	showVersion      = flag.Bool("version", false, "print version string")
-	topic            = flag.String("topic", "", "NSQ topic")
-	channel          = flag.String("channel", "", "NSQ channel")
-	concurrency      = flag.Int("concurrency", 1, "Handler concurrency default is 1")
-	maxInFlight      = flag.Int("max-in-flight", 200, "max number of messages to allow in flight")
-	consumerOpts     = util.StringArray{}
-	nsqdTCPAddrs     = util.StringArray{}
-	lookupdHTTPAddrs = util.StringArray{}
-	awsAuth          aws.Auth
+	awsAuth aws.Auth
 )
 
 func init() {
-	flag.Var(&consumerOpts, "consumer-opt", "option to passthrough to nsq.Consumer (may be given multiple times, http://godoc.org/github.com/bitly/go-nsq#Config)")
-	flag.Var(&nsqdTCPAddrs, "nsqd-tcp-address", "nsqd TCP address (may be given multiple times)")
-	flag.Var(&lookupdHTTPAddrs, "lookupd-http-address", "lookupd HTTP address (may be given multiple times)")
 	awsAuth = newAwsAuth()
 }
 
@@ -165,19 +146,19 @@ func (r *rectangle) newImageRect() image.Rectangle {
 	return image.Rect(r.Min[0], r.Min[1], r.Max[0], r.Max[1])
 }
 
-type thumbnailOpt struct {
+type ThumbnailOpt struct {
 	Rect   *rectangle `json:"rect,omitempty"`
 	Width  int        `json:"width"`
 	Height int        `json:"height"`
 }
 
-type thumbnailerMessage struct {
+type ThumbnailerMessage struct {
 	SrcImage  string         `json:"srcImage"`
 	DstFolder string         `json:"dstFolder"`
-	Opts      []thumbnailOpt `json:"opts"`
+	Opts      []ThumbnailOpt `json:"opts"`
 }
 
-func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.URL {
+func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) *url.URL {
 	fURL, err := url.Parse(tm.DstFolder)
 	if err != nil {
 		log.Fatalln("An error occured while parsing the DstFolder", err)
@@ -186,17 +167,17 @@ func (tm *thumbnailerMessage) thumbURL(baseName string, opt thumbnailOpt) *url.U
 	if opt.Rect != nil {
 		fURL.Path = filepath.Join(
 			fURL.Path,
-			fmt.Sprintf("%s_c-%d-%d-%d-%d_s-%d-%d.jpeg", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height))
+			fmt.Sprintf("%s_c%d-%d-%d-%d_s%dx%d.jpg", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height))
 	} else if opt.Width == 0 && opt.Height == 0 {
 		fURL.Path = filepath.Join(fURL.Path, baseName)
 	} else {
-		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s-%d-%d.jpeg", baseName, opt.Width, opt.Height))
+		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s%dx%d.jpg", baseName, opt.Width, opt.Height))
 	}
 	return fURL
 }
 
 // Resize the src image to the biggest thumb sizes in tm.opts.
-func (tm *thumbnailerMessage) maxThumbnail(src image.Image) image.Image {
+func (tm *ThumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	maxW, maxH := 0, 0
 	srcW := src.Bounds().Max.X
 	srcH := src.Bounds().Max.Y
@@ -222,7 +203,7 @@ func (tm *thumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	return imaging.Resize(src, maxW, maxH, imaging.CatmullRom)
 }
 
-func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt thumbnailOpt) {
+func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt ThumbnailOpt) {
 	timerStart := time.Now()
 	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
@@ -258,7 +239,7 @@ func (tm *thumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	return
 }
 
-func (tm *thumbnailerMessage) generateThumbnails() error {
+func (tm *ThumbnailerMessage) GenerateThumbnails() error {
 	sURL, err := url.Parse(tm.SrcImage)
 	if err != nil {
 		log.Println("An error occured while parsing the SrcImage", err)
@@ -298,83 +279,4 @@ func (tm *thumbnailerMessage) generateThumbnails() error {
 
 	}
 	return nil
-}
-
-type thumbnailerHandler struct {
-	sourceImage      string
-	thumbnailCounter int
-}
-
-func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
-	tm := thumbnailerMessage{}
-	err := json.Unmarshal(m.Body, &tm)
-	if err != nil {
-		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
-		return err
-	}
-	return tm.generateThumbnails()
-}
-
-func main() {
-	log.Println("Starting nsq_thumbnailing consumer")
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("nsq_thumbnailer v%s\n", util.BINARY_VERSION)
-		return
-	}
-
-	if *channel == "" {
-		rand.Seed(time.Now().UnixNano())
-		*channel = fmt.Sprintf("thumbnailer%06d#ephemeral", rand.Int()%999999)
-	}
-
-	if *topic == "" {
-		log.Fatal("--topic is required")
-	}
-
-	if len(nsqdTCPAddrs) == 0 && len(lookupdHTTPAddrs) == 0 {
-		log.Fatal("--nsqd-tcp-address or --lookupd-http-address required")
-	}
-	if len(nsqdTCPAddrs) > 0 && len(lookupdHTTPAddrs) > 0 {
-		log.Fatal("use --nsqd-tcp-address or --lookupd-http-address not both")
-	}
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	cfg := nsq.NewConfig()
-	cfg.UserAgent = fmt.Sprintf("nsq_thumbnailer/%s go-nsq/%s", util.BINARY_VERSION, nsq.VERSION)
-	err := util.ParseOpts(cfg, consumerOpts)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cfg.MaxInFlight = *maxInFlight
-
-	consumer, err := nsq.NewConsumer(*topic, *channel, cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("concurrency: ", *concurrency)
-	consumer.AddConcurrentHandlers(&thumbnailerHandler{}, *concurrency)
-
-	err = consumer.ConnectToNSQDs(nsqdTCPAddrs)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = consumer.ConnectToNSQLookupds(lookupdHTTPAddrs)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for {
-		select {
-		case <-consumer.StopChan:
-			return
-		case <-sigChan:
-			consumer.Stop()
-		}
-	}
 }
