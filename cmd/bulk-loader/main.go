@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -58,7 +60,9 @@ func thumbnailFileRequest(file string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("[ERROR] Status code for the thumbnail request %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
+	// consume the entire response body
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
 	return nil
 }
 
