@@ -148,9 +148,10 @@ func (r *rectangle) newImageRect() image.Rectangle {
 }
 
 type ThumbnailOpt struct {
-	Rect   *rectangle `json:"rect,omitempty"`
-	Width  int        `json:"width"`
-	Height int        `json:"height"`
+	DstImage string     `json:"dstImage,omitempty"`
+	Rect     *rectangle `json:"rect,omitempty"`
+	Width    int        `json:"width"`
+	Height   int        `json:"height"`
 }
 
 type ThumbnailerMessage struct {
@@ -159,23 +160,31 @@ type ThumbnailerMessage struct {
 	Opts      []ThumbnailOpt `json:"opts"`
 }
 
-func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) *url.URL {
-	fURL, err := url.Parse(tm.DstFolder)
-	if err != nil {
-		log.Fatalln("An error occured while parsing the DstFolder", err)
-	}
-	// TODO (yml): I am pretty sure that we do not really want to always do this.
-	ext := strings.ToLower(filepath.Ext(tm.SrcImage))
-	if opt.Rect != nil {
-		fURL.Path = filepath.Join(
-			fURL.Path,
-			fmt.Sprintf("%s_c%d-%d-%d-%d_s%dx%d%s", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height, ext))
-	} else if opt.Width == 0 && opt.Height == 0 {
-		fURL.Path = filepath.Join(fURL.Path, baseName)
+func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.URL, error) {
+	if opt.DstImage == "" {
+		fURL, err := url.Parse(tm.DstFolder)
+		if err != nil {
+			return nil, fmt.Errorf("An error occured while parsing the DstFolder %s", err)
+		}
+		// TODO (yml): I am pretty sure that we do not really want to always do this.
+		ext := strings.ToLower(filepath.Ext(tm.SrcImage))
+		if opt.Rect != nil {
+			fURL.Path = filepath.Join(
+				fURL.Path,
+				fmt.Sprintf("%s_c%d-%d-%d-%d_s%dx%d%s", baseName, opt.Rect.Min[0], opt.Rect.Min[1], opt.Rect.Max[0], opt.Rect.Max[1], opt.Width, opt.Height, ext))
+		} else if opt.Width == 0 && opt.Height == 0 {
+			fURL.Path = filepath.Join(fURL.Path, baseName)
+		} else {
+			fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s%dx%d%s", baseName, opt.Width, opt.Height, ext))
+		}
+		return fURL, nil
 	} else {
-		fURL.Path = filepath.Join(fURL.Path, fmt.Sprintf("%s_s%dx%d%s", baseName, opt.Width, opt.Height, ext))
+		fURL, err := url.Parse(opt.DstImage)
+		if err != nil {
+			return nil, fmt.Errorf("An error occured while parsing the DstImage %s", err)
+		}
+		return fURL, nil
 	}
-	return fURL
 }
 
 // Resize the src image to the biggest thumb sizes in tm.opts.
@@ -227,20 +236,23 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 		opt.Height = thumBounds.Max.Y
 	}
 
-	thumbURL := tm.thumbURL(filepath.Base(srcURL.Path), opt)
+	thumbURL, err := tm.thumbURL(filepath.Base(srcURL.Path), opt)
+	if err != nil {
+		log.Println("An error occured while contstructing thumbURL for", tm.SrcImage, err)
+	}
 	timerThumbDone := time.Now()
 	log.Println("thumb :", thumbURL, " generated in : ", timerThumbDone.Sub(timerStart))
 
 	timerSaveStart := time.Now()
 	thumb, err := NewImageOpenSaver(thumbURL)
 	if err != nil {
-		log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+		log.Println("An error occured while creating an instance of ImageOpenSaver for", thumbURL, err)
 		errorChan <- err
 		return
 	}
 	err = thumb.Save(thumbImg)
 	if err != nil {
-		log.Println("An error occured while saving the thumb", err)
+		log.Println("An error occured while saving,", thumbURL, err)
 		errorChan <- err
 		return
 	}
