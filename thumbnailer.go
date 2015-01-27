@@ -218,6 +218,15 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
 	}
 
+	// TODO (yml) not sure we always want to do this
+	thumBounds := thumbImg.Bounds()
+	if opt.Width == 0 {
+		opt.Width = thumBounds.Max.X
+	}
+	if opt.Height == 0 {
+		opt.Height = thumBounds.Max.Y
+	}
+
 	thumbURL := tm.thumbURL(filepath.Base(srcURL.Path), opt)
 	timerThumbDone := time.Now()
 	log.Println("thumb :", thumbURL, " generated in : ", timerThumbDone.Sub(timerStart))
@@ -261,14 +270,20 @@ func (tm *ThumbnailerMessage) GenerateThumbnails() error {
 	img = toNRGBA(img)
 	fmt.Println("image Bounds: ", img.Bounds())
 
+	var maxThumb image.Image
 	if len(tm.Opts) > 1 {
 		// The resized image will be used to generate all the thumbs
-		img = tm.maxThumbnail(img)
+		maxThumb = tm.maxThumbnail(img)
 	}
 
 	errorChan := make(chan error, 1)
 	for _, opt := range tm.Opts {
-		go tm.generateThumbnail(errorChan, sURL, img, opt)
+		if opt.Rect == nil && maxThumb != nil {
+			go tm.generateThumbnail(errorChan, sURL, maxThumb, opt)
+		} else {
+			// we can't use the maxThumb optimization
+			go tm.generateThumbnail(errorChan, sURL, img, opt)
+		}
 	}
 
 	for i := 0; i < len(tm.Opts); i++ {
