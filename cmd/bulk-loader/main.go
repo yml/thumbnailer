@@ -61,8 +61,14 @@ func thumbnailFileRequest(file string) error {
 		return fmt.Errorf("[ERROR] Status code for the thumbnail request %d", resp.StatusCode)
 	}
 	// consume the entire response body
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
+	_, err = io.Copy(ioutil.Discard, resp.Body)
+	if err != nil {
+		return fmt.Errorf("An error occured while reading resp.Body", err)
+	}
+	err = resp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("An error occured while closing resp.Body", err)
+	}
 	return nil
 }
 
@@ -80,7 +86,6 @@ func fileWalkFn(file string, info os.FileInfo, err error) error {
 			}
 		}
 		fmt.Println("[ERROR] This extension is not supported:", ext, file)
-		return nil
 	}
 	return nil
 }
