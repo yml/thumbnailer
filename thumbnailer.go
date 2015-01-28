@@ -265,17 +265,17 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 func (tm *ThumbnailerMessage) GenerateThumbnails() error {
 	sURL, err := url.Parse(tm.SrcImage)
 	if err != nil {
-		log.Println("An error occured while parsing the SrcImage", err)
+		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
 		return err
 	}
 	src, err := NewImageOpenSaver(sURL)
 	if err != nil {
-		log.Println("An error occured while creating an instance of ImageOpenSaver", err)
+		log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
 		return err
 	}
 	img, err := src.Open()
 	if err != nil {
-		log.Println("An error occured while opening SrcImage", err)
+		log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
 		return err
 	}
 	// From now on we will deal with an NRGBA image
