@@ -8,11 +8,13 @@ import (
 	"math"
 	"mime"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/disintegration/imaging"
+	"github.com/kjk/golibjpegturbo"
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 )
@@ -66,7 +68,17 @@ type fsImageOpenSaver struct {
 }
 
 func (s fsImageOpenSaver) Open() (image.Image, error) {
-	return imaging.Open(s.URL.Path)
+	file, err := os.Open(s.URL.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	ext := strings.ToLower(filepath.Ext(s.URL.Path))
+	if ext == ".jpg" || ext == ".jpeg" {
+		return golibjpegturbo.Decode(file)
+	}
+	img, _, err := image.Decode(file)
+	return img, err
 }
 
 func (s fsImageOpenSaver) Save(img image.Image) error {
@@ -86,7 +98,13 @@ func (s s3ImageOpenSaver) Open() (image.Image, error) {
 		return nil, err
 	}
 	defer reader.Close()
-	return imaging.Decode(reader)
+	ext := strings.ToLower(filepath.Ext(s.URL.Path))
+	if ext == ".jpg" || ext == ".jpeg" {
+		return golibjpegturbo.Decode(reader)
+	}
+	img, _, err := image.Decode(reader)
+	return img, err
+
 }
 
 func (s s3ImageOpenSaver) Save(img image.Image) error {
