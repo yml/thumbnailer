@@ -167,7 +167,10 @@ func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.
 			return nil, fmt.Errorf("An error occured while parsing the DstFolder %s", err)
 		}
 		// TODO (yml): I am pretty sure that we do not really want to always do this.
-		ext := strings.ToLower(filepath.Ext(tm.SrcImage))
+		ext := filepath.Ext(tm.SrcImage)
+		baseName = strings.TrimSuffix(baseName, ext)
+		ext = strings.ToLower(ext)
+
 		if opt.Rect != nil {
 			fURL.Path = filepath.Join(
 				fURL.Path,
