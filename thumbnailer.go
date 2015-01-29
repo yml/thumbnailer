@@ -226,8 +226,10 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 
 	if opt.Width == 0 && opt.Height == 0 {
 		thumbImg = toNRGBA(img)
-	} else {
+	} else if opt.Width == 0 || opt.Height == 0 {
 		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
+	} else {
+		thumbImg = imaging.Fit(img, opt.Width, opt.Height, imaging.CatmullRom)
 	}
 
 	// TODO (yml) not sure we always want to do this
