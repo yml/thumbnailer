@@ -245,10 +245,8 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 
 	if opt.Width == 0 && opt.Height == 0 {
 		thumbImg = toNRGBA(img)
-	} else if opt.Width == 0 || opt.Height == 0 {
-		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
 	} else {
-		thumbImg = imaging.Fit(img, opt.Width, opt.Height, imaging.CatmullRom)
+		thumbImg = imaging.Resize(img, opt.Width, opt.Height, imaging.CatmullRom)
 	}
 
 	// TODO (yml) not sure we always want to do this
@@ -307,7 +305,6 @@ func (tm *ThumbnailerMessage) GenerateThumbnails(errChan chan error) {
 	}
 	// From now on we will deal with an NRGBA image
 	img = toNRGBA(img)
-	fmt.Println("image Bounds: ", img.Bounds())
 
 	var maxThumb image.Image
 	if len(tm.Opts) > 1 {
