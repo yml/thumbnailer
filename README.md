@@ -4,6 +4,14 @@ nsq based consumer that  generates thumbnails.
 
 ## Nothing to see in there yet.
 
+## Dependencies
+
+Before you import library, you need to install libjpeg-turbo.
+
+On Ubuntu: sudo apt-get install libjpeg-turbo8-dev.
+
+On Mac OS X: brew install libjpeg-turbo
+
 ## How to use it
 
 ### Start nsq machinery in 3 terminals
