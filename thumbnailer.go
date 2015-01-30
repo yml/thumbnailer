@@ -174,6 +174,7 @@ type ThumbnailOpt struct {
 
 type ThumbnailerMessage struct {
 	SrcImage  string         `json:"srcImage"`
+	DeleteSrc bool           `json:"deleteSrc",omitempty"`
 	DstFolder string         `json:"dstFolder"`
 	Opts      []ThumbnailOpt `json:"opts"`
 }
@@ -285,21 +286,24 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	return
 }
 
-func (tm *ThumbnailerMessage) GenerateThumbnails() error {
+func (tm *ThumbnailerMessage) GenerateThumbnails(errChan chan error) {
 	sURL, err := url.Parse(tm.SrcImage)
 	if err != nil {
 		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
-		return err
+		errChan <- err
+		return
 	}
 	src, err := NewImageOpenSaver(sURL)
 	if err != nil {
 		log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
-		return err
+		errChan <- err
+		return
 	}
 	img, err := src.Open()
 	if err != nil {
 		log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
-		return err
+		errChan <- err
+		return
 	}
 	// From now on we will deal with an NRGBA image
 	img = toNRGBA(img)
@@ -320,15 +324,31 @@ func (tm *ThumbnailerMessage) GenerateThumbnails() error {
 			go tm.generateThumbnail(errorChan, sURL, img, opt)
 		}
 	}
-
+	var firstErr error
 	for i := 0; i < len(tm.Opts); i++ {
-		select {
-		case err := <-errorChan:
-			if err != nil {
-				return err
-			}
+		err := <-errorChan
+		if err != nil && firstErr == nil {
+			// We preserve the first error
+			firstErr = err
 		}
+	}
+	errChan <- firstErr
+	return
+}
 
+func (tm *ThumbnailerMessage) DeleteImage() error {
+	sURL, err := url.Parse(tm.SrcImage)
+	if err != nil {
+		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
+		return err
+	}
+	if sURL.Scheme == "file" {
+		err := os.Remove(sURL.Path)
+		if err != nil {
+			return fmt.Errorf("Failed to remove %s,%s", sURL.Path, err)
+		}
+	} else {
+		return fmt.Errorf("DeleteImage is not implemented for %s", tm.SrcImage)
 	}
 	return nil
 }

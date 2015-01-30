@@ -45,7 +45,17 @@ func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
 		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
 		return err
 	}
-	return tm.GenerateThumbnails()
+	errChan := make(chan error)
+	go tm.GenerateThumbnails(errChan)
+	err = <-errChan
+	if err != nil {
+		return err
+	}
+	if tm.DeleteSrc == true {
+		fmt.Println("Deleting", tm.SrcImage)
+		err = tm.DeleteImage()
+	}
+	return err
 }
 
 func main() {
