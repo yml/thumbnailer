@@ -27,8 +27,6 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to decode the thumb generation request: %s", err), http.StatusBadRequest)
 	}
 	fmt.Printf("thumbReq: %s\n", thumbReq.String())
-	w.Write([]byte("[DEBUG] thumb request:\n"))
-	w.Write(thumbReq.Bytes())
 
 	tm := nsqthumbnailer.ThumbnailerMessage{}
 	err = json.Unmarshal(thumbReq.Bytes(), &tm)
@@ -37,13 +35,22 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	errChan := make(chan error)
-	go tm.GenerateThumbnails(errChan)
-	err = <-errChan
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	resultChan := make(chan nsqthumbnailer.ThumbnailResult)
+	go tm.GenerateThumbnails(resultChan)
+
+	results := make([]nsqthumbnailer.ThumbnailResult, 0)
+	for i := 0; i < len(tm.Opts); i++ {
+		result := <-resultChan
+		results = append(results, result)
 	}
+	for _, r := range results {
+		if r.Err != nil {
+			err := fmt.Errorf("Error: At least one thumb generation failed - %s", r.Err, results)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if tm.DeleteSrc == true {
 		fmt.Println("Deleting", tm.SrcImage)
 		err = tm.DeleteImage()
@@ -52,6 +59,12 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	body, err := json.Marshal(results)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	w.Write(body)
 	return
 }
 

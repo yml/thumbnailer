@@ -45,12 +45,34 @@ func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
 		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
 		return err
 	}
-	errChan := make(chan error)
-	go tm.GenerateThumbnails(errChan)
-	err = <-errChan
-	if err != nil {
-		return err
+	// delete start
+	// errChan := make(chan error)
+	// go tm.GenerateThumbnails(errChan)
+	// err = <-errChan
+	// if err != nil {
+	// 	return err
+	// }
+	// if tm.DeleteSrc == true {
+	// 	fmt.Println("Deleting", tm.SrcImage)
+	// 	err = tm.DeleteImage()
+	// }
+	// return err
+	// delete stop
+
+	resultChan := make(chan nsqthumbnailer.ThumbnailResult)
+	go tm.GenerateThumbnails(resultChan)
+
+	results := make([]nsqthumbnailer.ThumbnailResult, 0)
+	for i := 0; i < len(tm.Opts); i++ {
+		result := <-resultChan
+		results = append(results, result)
 	}
+	for _, r := range results {
+		if r.Err != nil {
+			return fmt.Errorf("Error: At least one thumb generation failed - %s", r.Err, results)
+		}
+	}
+
 	if tm.DeleteSrc == true {
 		fmt.Println("Deleting", tm.SrcImage)
 		err = tm.DeleteImage()

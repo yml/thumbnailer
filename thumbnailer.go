@@ -179,6 +179,11 @@ type ThumbnailerMessage struct {
 	Opts      []ThumbnailOpt `json:"opts"`
 }
 
+type ThumbnailResult struct {
+	Thumbnail *url.URL
+	Err       error
+}
+
 func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.URL, error) {
 	if opt.DstImage == "" {
 		fURL, err := url.Parse(tm.DstFolder)
@@ -236,7 +241,7 @@ func (tm *ThumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	return imaging.Resize(src, maxW, maxH, imaging.CatmullRom)
 }
 
-func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt ThumbnailOpt) {
+func (tm *ThumbnailerMessage) generateThumbnail(srcURL *url.URL, img image.Image, opt ThumbnailOpt) ThumbnailResult {
 	timerStart := time.Now()
 	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
@@ -269,38 +274,35 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	thumb, err := NewImageOpenSaver(thumbURL)
 	if err != nil {
 		log.Println("An error occured while creating an instance of ImageOpenSaver for", thumbURL, err)
-		errorChan <- err
-		return
+		return ThumbnailResult{nil, err}
 	}
 	err = thumb.Save(thumbImg)
 	if err != nil {
 		log.Println("An error occured while saving,", thumbURL, err)
-		errorChan <- err
-		return
+		return ThumbnailResult{nil, err}
 	}
-	errorChan <- nil
 	timerEnd := time.Now()
 	log.Println("thumb :", thumbURL, " saved in : ", timerEnd.Sub(timerSaveStart))
-	return
+	return ThumbnailResult{thumbURL, nil}
 }
 
-func (tm *ThumbnailerMessage) GenerateThumbnails(errChan chan error) {
+func (tm *ThumbnailerMessage) GenerateThumbnails(resultChan chan ThumbnailResult) {
 	sURL, err := url.Parse(tm.SrcImage)
 	if err != nil {
 		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
-		errChan <- err
+		resultChan <- ThumbnailResult{nil, err}
 		return
 	}
 	src, err := NewImageOpenSaver(sURL)
 	if err != nil {
 		log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
-		errChan <- err
+		resultChan <- ThumbnailResult{nil, err}
 		return
 	}
 	img, err := src.Open()
 	if err != nil {
 		log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
-		errChan <- err
+		resultChan <- ThumbnailResult{nil, err}
 		return
 	}
 	// From now on we will deal with an NRGBA image
@@ -312,24 +314,18 @@ func (tm *ThumbnailerMessage) GenerateThumbnails(errChan chan error) {
 		maxThumb = tm.maxThumbnail(img)
 	}
 
-	errorChan := make(chan error, 1)
 	for _, opt := range tm.Opts {
 		if opt.Rect == nil && maxThumb != nil {
-			go tm.generateThumbnail(errorChan, sURL, maxThumb, opt)
+			go func(out chan ThumbnailResult, opt ThumbnailOpt) {
+				resultChan <- tm.generateThumbnail(sURL, maxThumb, opt)
+			}(resultChan, opt)
 		} else {
 			// we can't use the maxThumb optimization
-			go tm.generateThumbnail(errorChan, sURL, img, opt)
+			go func(out chan ThumbnailResult, opt ThumbnailOpt) {
+				resultChan <- tm.generateThumbnail(sURL, img, opt)
+			}(resultChan, opt)
 		}
 	}
-	var firstErr error
-	for i := 0; i < len(tm.Opts); i++ {
-		err := <-errorChan
-		if err != nil && firstErr == nil {
-			// We preserve the first error
-			firstErr = err
-		}
-	}
-	errChan <- firstErr
 	return
 }
 
