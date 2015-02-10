@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"log"
 	"math"
 	"mime"
@@ -15,12 +19,23 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/kjk/golibjpegturbo"
+	"golang.org/x/image/bmp"
+	"golang.org/x/image/tiff"
 	"gopkg.in/amz.v1/aws"
 	"gopkg.in/amz.v1/s3"
 )
 
 var (
 	awsAuth aws.Auth
+	formats = map[string]imaging.Format{
+		".jpg":  imaging.JPEG,
+		".jpeg": imaging.JPEG,
+		".png":  imaging.PNG,
+		".tif":  imaging.TIFF,
+		".tiff": imaging.TIFF,
+		".bmp":  imaging.BMP,
+		".gif":  imaging.GIF,
+	}
 )
 
 func init() {
@@ -37,6 +52,42 @@ func toNRGBA(img image.Image) *image.NRGBA {
 		}
 	}
 	return imaging.Clone(img)
+}
+
+// Encode writes the image img to w in the specified format (JPEG, PNG, GIF, TIFF or BMP).
+// copied from `imaging` and modified
+func Encode(w io.Writer, img image.Image, format imaging.Format) error {
+	var err error
+	switch format {
+	case imaging.JPEG:
+		var rgba *image.RGBA
+		if nrgba, ok := img.(*image.NRGBA); ok {
+			if nrgba.Opaque() {
+				rgba = &image.RGBA{
+					Pix:    nrgba.Pix,
+					Stride: nrgba.Stride,
+					Rect:   nrgba.Rect,
+				}
+			}
+		}
+		if rgba != nil {
+			err = jpeg.Encode(w, rgba, &jpeg.Options{Quality: 75})
+		} else {
+			err = jpeg.Encode(w, img, &jpeg.Options{Quality: 75})
+		}
+
+	case imaging.PNG:
+		err = png.Encode(w, img)
+	case imaging.GIF:
+		err = gif.Encode(w, img, &gif.Options{NumColors: 256})
+	case imaging.TIFF:
+		err = tiff.Encode(w, img, &tiff.Options{Compression: tiff.Deflate, Predictor: true})
+	case imaging.BMP:
+		err = bmp.Encode(w, img)
+	default:
+		err = imaging.ErrUnsupportedFormat
+	}
+	return err
 }
 
 func newAwsAuth() aws.Auth {
@@ -81,8 +132,22 @@ func (s fsImageOpenSaver) Open() (image.Image, error) {
 	return img, err
 }
 
+// Save saves the image to file with the specified filename.
+// The format is determined from the filename extension: "jpg" (or "jpeg"), "png", "gif", "tif" (or "tiff") and "bmp" are supported.
 func (s fsImageOpenSaver) Save(img image.Image) error {
-	return imaging.Save(img, s.URL.Path)
+	ext := strings.ToLower(filepath.Ext(s.URL.Path))
+	f, ok := formats[ext]
+	if !ok {
+		return imaging.ErrUnsupportedFormat
+	}
+
+	file, err := os.Create(s.URL.Path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return Encode(file, img, f)
 }
 
 // s3 implementation of the s3ImageOpenSaver interface
@@ -97,6 +162,7 @@ func (s s3ImageOpenSaver) Open() (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defer reader.Close()
 	ext := strings.ToLower(filepath.Ext(s.URL.Path))
 	if ext == ".jpg" || ext == ".jpeg" {
@@ -109,15 +175,6 @@ func (s s3ImageOpenSaver) Open() (image.Image, error) {
 
 func (s s3ImageOpenSaver) Save(img image.Image) error {
 	var buffer bytes.Buffer
-	formats := map[string]imaging.Format{
-		".jpg":  imaging.JPEG,
-		".jpeg": imaging.JPEG,
-		".png":  imaging.PNG,
-		".tif":  imaging.TIFF,
-		".tiff": imaging.TIFF,
-		".bmp":  imaging.BMP,
-		".gif":  imaging.GIF,
-	}
 	ext := strings.ToLower(filepath.Ext(s.URL.Path))
 	f, ok := formats[ext]
 	if !ok {
