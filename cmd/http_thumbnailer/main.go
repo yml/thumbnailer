@@ -21,15 +21,31 @@ var (
 
 func thumbHandler(w http.ResponseWriter, r *http.Request) {
 	var thumbReq bytes.Buffer
-	path := strings.TrimPrefix(r.URL.Path, URLNames["/thumb/"])
-	_, err := io.Copy(&thumbReq, base64.NewDecoder(base64.URLEncoding, strings.NewReader(path)))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to decode the thumb generation request: %s", err), http.StatusBadRequest)
+	if r.Method == "GET" {
+		// In this case we are going to look for the thumbReq in the URL.
+		// It should be base 64 encoded
+		path := strings.TrimPrefix(r.URL.Path, URLNames["/thumb/"])
+		_, err := io.Copy(&thumbReq, base64.NewDecoder(base64.URLEncoding, strings.NewReader(path)))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to decode the thumb generation request: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else if r.Method == "POST" {
+		// Grab the JSON representation of thumbReq directly from the r.Body
+		_, err := io.Copy(&thumbReq, r.Body)
+		defer r.Body.Close()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to decode the thumb generation request: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		http.Error(w, fmt.Sprintf("Request method not supported: %s", r.Method), http.StatusBadRequest)
+		return
 	}
 	fmt.Printf("thumbReq: %s\n", thumbReq.String())
 
 	tm := nsqthumbnailer.ThumbnailerMessage{}
-	err = json.Unmarshal(thumbReq.Bytes(), &tm)
+	err := json.Unmarshal(thumbReq.Bytes(), &tm)
 	if err != nil {
 		err = errors.New(fmt.Sprintf("ERROR: failed to unmarshal `thumbReq` into a thumbnailerMessage - %s", err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
