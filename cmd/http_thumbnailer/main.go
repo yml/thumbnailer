@@ -19,7 +19,7 @@ var (
 	URLNames = make(map[string]string)
 )
 
-func thumbHandler(w http.ResponseWriter, r *http.Request) {
+func thumbsHandler(w http.ResponseWriter, r *http.Request) {
 	var thumbReq bytes.Buffer
 	if r.Method == "GET" {
 		// In this case we are going to look for the thumbReq in the URL.
@@ -88,7 +88,7 @@ func main() {
 	flag.Parse()
 	fmt.Println("Starting HTTP thumbnailer on: ", *addr)
 	URLNames["/"] = "/"
-	URLNames["/thumb/"] = "/thumb/"
+	URLNames["/thumbs/"] = "/thumbs/"
 	URLNames["/debug/"] = "/debug/"
 
 	mux := http.NewServeMux()
@@ -104,7 +104,7 @@ func main() {
 		enc.Close()
 		w.Write([]byte("\n\n"))
 	})
-	mux.HandleFunc(URLNames["/thumb/"], thumbHandler)
+	mux.HandleFunc(URLNames["/thumbs/"], thumbsHandler)
 	http.ListenAndServe(*addr, mux)
 
 }
