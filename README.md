@@ -72,9 +72,17 @@ export AWS_ACCESS_KEY_ID=<secret>
 go install github.com/yml/nsqthumbnailer/... && http_thumbnailer -dstFolder=file:///tmp/nsq-thumb-dst-test -srcFolder=file:///tmp/nsq-thumb-src-test 
 ```
 
-### send http request
+### send http request to generate thumbnails
+
 
 ```
 yml@garfield$ (git: http_thumbnailer) curl 127.0.0.1:9900/thumb/50x50/baignade.jpg
+
 [{"Thumbnail":{"Scheme":"file","Opaque":"","User":null,"Host":"","Path":"/home/yml/Dropbox/Devs/golang/nsq_sandbox/nsq-thumb-dst-test/baignade_s50x50.jpg","RawQuery":"","Fragment":""},"Err":null}]
+```
+
+```
+curl 127.0.0.1:9900/thumbs/ -d '{"srcImage": "s3://nsq-thumb-src-test/baignade.jpg", "opts": [{"width":0, "height":350}], "dstFolder":"s3://nsq-thumb-dst-test/"}'
+
+[{"Thumbnail":{"Scheme":"s3","Opaque":"","User":null,"Host":"nsq-thumb-dst-test","Path":"/baignade_s467x350.jpg","RawQuery":"","Fragment":""},"Err":null}]
 ```
