@@ -46,12 +46,9 @@ func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
 		return err
 	}
 
-	resultChan := make(chan nsqthumbnailer.ThumbnailResult)
-	go tm.GenerateThumbnails(resultChan)
-
+	resultChan := tm.GenerateThumbnails()
 	results := make([]nsqthumbnailer.ThumbnailResult, 0)
-	for i := 0; i < len(tm.Opts); i++ {
-		result := <-resultChan
+	for result := range resultChan {
 		results = append(results, result)
 	}
 	for _, r := range results {

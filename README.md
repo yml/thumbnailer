@@ -1,6 +1,5 @@
-#nsqthumbnailer
+#thumbnailer
 
-nsq based consumer that  generates thumbnails.
 
 ## Nothing to see in there yet.
 
@@ -14,6 +13,11 @@ On Mac OS X: brew install libjpeg-turbo
 
 ## How to use it
 
+
+## nsq_thumbnailer
+
+nsq based consumer that  generates thumbnails.
+
 ### Start nsq machinery in 3 terminals
 
 ```
@@ -22,7 +26,7 @@ nsqd --lookupd-tcp-address=127.0.0.1:4160
 nsqadmin --lookupd-http-address=127.0.0.1:4161
 ```
 
-## How to debug
+### How to debug nsq messages
 
 You can tail the messages flowing in the test topic
 
@@ -30,25 +34,47 @@ You can tail the messages flowing in the test topic
 nsq_tail -lookupd-http-address=127.0.0.1:4161 -topic=test
 ```
 
-## Start nsq_thumbnailer
 
-```
-go install github.com/yml/nsqthumbnailer && nsqthumbnailer --topic=test --lookupd-http-address=127.0.0.1:4161 --concurrency=10
-```
-
-## send messages
-
-local file system
-
-```
-curl -d '{"srcImage": "file://tmp/nsqthumbnailer/src/image1.jpg, "opts": [{"rect":{"min":[200, 200], "max":[600,600]},"width":150, "height":0}, {"width":250, "height":0}, {"width":0, "height":350}], "dstFolder":""file://tmp/nsqthumbnailer/tumbs}' 'http://127.0.0.1:4151/put?topic=test'
-```
-
-S3
+### Start nsq thumbnailing service
 
 ```
 export AWS_SECRET_ACCESS_KEY=<secret>
 export AWS_ACCESS_KEY_ID=<secret>
 
+go install github.com/yml/nsqthumbnailer/... && nsq_thumbnailer --topic=test --lookupd-http-address=127.0.0.1:4161 --concurrency=10
+```
+
+
+### send nsq message
+
+#### local file system
+
+```
+curl -d '{"srcImage": "file://tmp/nsqthumbnailer/src/image1.jpg, "opts": [{"rect":{"min":[200, 200], "max":[600,600]},"width":150, "height":0}, {"width":250, "height":0}, {"width":0, "height":350}], "dstFolder":""file://tmp/nsqthumbnailer/tumbs}' 'http://127.0.0.1:4151/put?topic=test'
+```
+
+#### S3
+
+```
 curl -d '{"srcImage": "s3://nsq-thumb-src-test/baignade.jpg", "opts": [{"rect":{"min":[200, 200], "max":[600,600]},"width":150, "height":0}, {"width":250, "height":0}, {"width":0, "height":350}], "dstFolder":"s3://nsq-thumb-dst-test/"}' 'http://127.0.0.1:4151/put?topic=test'
+```
+
+## http_thumbnailer
+
+http thumbnailer
+
+### Start the service
+
+```
+export AWS_SECRET_ACCESS_KEY=<secret>
+export AWS_ACCESS_KEY_ID=<secret>
+
+go install github.com/yml/nsqthumbnailer/... && http_thumbnailer -dstFolder=file:///tmp/nsq-thumb-dst-test -srcFolder=file:///tmp/nsq-thumb-src-test 
+```
+
+### send http request
+
+```
+yml@garfield$ (git: http_thumbnailer) curl 127.0.0.1:9900/thumb/50x50/baignade.jpg
+[{"Thumbnail":{"Scheme":"file","Opaque":"","User":null,"Host":"","Path":"/home/yml/Dropbox/Devs/golang/nsq_sandbox/nsq-thumb-dst-test/baignade_s50x50.jpg","RawQuery":"","Fragment":""},"Err":null}]
 ```

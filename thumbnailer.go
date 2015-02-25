@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -343,47 +344,55 @@ func (tm *ThumbnailerMessage) generateThumbnail(srcURL *url.URL, img image.Image
 	return ThumbnailResult{thumbURL, nil}
 }
 
-func (tm *ThumbnailerMessage) GenerateThumbnails(resultChan chan ThumbnailResult) {
-	sURL, err := url.Parse(tm.SrcImage)
-	if err != nil {
-		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
-		resultChan <- ThumbnailResult{nil, err}
-		return
-	}
-	src, err := NewImageOpenSaver(sURL)
-	if err != nil {
-		log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
-		resultChan <- ThumbnailResult{nil, err}
-		return
-	}
-	img, err := src.Open()
-	if err != nil {
-		log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
-		resultChan <- ThumbnailResult{nil, err}
-		return
-	}
-	// From now on we will deal with an NRGBA image
-	img = toNRGBA(img)
-
-	var maxThumb image.Image
-	if len(tm.Opts) > 1 {
-		// The resized image will be used to generate all the thumbs
-		maxThumb = tm.maxThumbnail(img)
-	}
-
-	for _, opt := range tm.Opts {
-		if opt.Rect == nil && maxThumb != nil {
-			go func(out chan ThumbnailResult, opt ThumbnailOpt) {
-				resultChan <- tm.generateThumbnail(sURL, maxThumb, opt)
-			}(resultChan, opt)
-		} else {
-			// we can't use the maxThumb optimization
-			go func(out chan ThumbnailResult, opt ThumbnailOpt) {
-				resultChan <- tm.generateThumbnail(sURL, img, opt)
-			}(resultChan, opt)
+func (tm *ThumbnailerMessage) GenerateThumbnails() <-chan ThumbnailResult {
+	resultChan := make(chan ThumbnailResult)
+	go func(rc chan<- ThumbnailResult) {
+		defer close(rc)
+		sURL, err := url.Parse(tm.SrcImage)
+		if err != nil {
+			log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
 		}
-	}
-	return
+		src, err := NewImageOpenSaver(sURL)
+		if err != nil {
+			log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
+		}
+		img, err := src.Open()
+		if err != nil {
+			log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
+		}
+		// From now on we will deal with an NRGBA image
+		img = toNRGBA(img)
+
+		var maxThumb image.Image
+		if len(tm.Opts) > 1 {
+			// The resized image will be used to generate all the thumbs
+			maxThumb = tm.maxThumbnail(img)
+		}
+
+		var wg sync.WaitGroup
+		for _, opt := range tm.Opts {
+			wg.Add(1)
+			// TODO (yml) cap the number goroutines
+			go func(out chan<- ThumbnailResult, opt ThumbnailOpt) {
+				defer wg.Done()
+				if opt.Rect == nil && maxThumb != nil {
+					out <- tm.generateThumbnail(sURL, maxThumb, opt)
+				} else {
+					// we can't use the maxThumb optimization
+					out <- tm.generateThumbnail(sURL, img, opt)
+				}
+			}(rc, opt)
+		}
+		wg.Wait()
+		return
+	}(resultChan)
+	return resultChan
 }
 
 func (tm *ThumbnailerMessage) DeleteImage() error {

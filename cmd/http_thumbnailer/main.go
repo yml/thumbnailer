@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/yml/nsqthumbnailer"
@@ -22,6 +24,31 @@ var (
 	URLNames  = make(map[string]string)
 )
 
+func processThumbResults(tm nsqthumbnailer.ThumbnailerMessage) ([]nsqthumbnailer.ThumbnailResult, error) {
+	resultChan := tm.GenerateThumbnails()
+	results := make([]nsqthumbnailer.ThumbnailResult, 0)
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	for _, result := range results {
+		if result.Err != nil {
+			err := fmt.Errorf("Error: At least one thumb generation failed - %s", result.Err, results)
+			return results, err
+		}
+	}
+
+	if tm.DeleteSrc == true {
+		log.Println("Deleting", tm.SrcImage)
+		err := tm.DeleteImage()
+		if err != nil {
+			return results, err
+		}
+	}
+	return results, nil
+
+}
+
 func thumbHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		var width, height int
@@ -29,7 +56,30 @@ func thumbHandler(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, URLNames["/thumb/"])
 		fmt.Sscanf(path, "%dx%d/%s", &width, &height, &filename)
 		fmt.Printf("[DEBUG] width: %d , height: %d, filename: %s ", width, height, filename)
+		opt := nsqthumbnailer.ThumbnailOpt{
+			Width:  width,
+			Height: height,
+		}
 		// build the thumbReg and generate the thumb and return it or redirect
+		tm := nsqthumbnailer.ThumbnailerMessage{}
+		// TODO (yml) generalized this approach to support other scheme
+		// Assume file:// to start
+		// there is security implication that need to be verified here.
+		tm.SrcImage = filepath.Join(*srcFolder, filename)
+		tm.DstFolder = *dstFolder
+		tm.Opts = append(tm.Opts, opt)
+		results, err := processThumbResults(tm)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		body, err := json.Marshal(results)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		w.Write(body)
+		return
 
 	} else {
 		http.Error(w, fmt.Sprintf("Request method not supported: %s", r.Method), http.StatusBadRequest)
@@ -70,29 +120,11 @@ func thumbsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resultChan := make(chan nsqthumbnailer.ThumbnailResult)
-	go tm.GenerateThumbnails(resultChan)
 
-	results := make([]nsqthumbnailer.ThumbnailResult, 0)
-	for i := 0; i < len(tm.Opts); i++ {
-		result := <-resultChan
-		results = append(results, result)
-	}
-	for _, r := range results {
-		if r.Err != nil {
-			err := fmt.Errorf("Error: At least one thumb generation failed - %s", r.Err, results)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if tm.DeleteSrc == true {
-		fmt.Println("Deleting", tm.SrcImage)
-		err = tm.DeleteImage()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	results, err := processThumbResults(tm)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	body, err := json.Marshal(results)
