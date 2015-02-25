@@ -1,7 +1,9 @@
-#thumbnailer
+# thumbnailer
 
+This package is still work in progress. The intend is to provides tools to create thumbnails :
 
-## Nothing to see in there yet.
+* Using an http server
+* Using a real time distributed messaging platform (nsq)
 
 ## Dependencies
 
@@ -21,7 +23,7 @@ nsq based consumer that  generates thumbnails.
 ### Start nsq machinery in 3 terminals
 
 ```
-nsqlookupd 
+nsqlookupd
 nsqd --lookupd-tcp-address=127.0.0.1:4160
 nsqadmin --lookupd-http-address=127.0.0.1:4161
 ```
