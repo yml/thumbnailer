@@ -5,6 +5,15 @@ This package is still work in progress. The intend is to provides tools to creat
 * Using an http server
 * Using a real time distributed messaging platform (nsq)
 
+## TODO
+
+* [ ] make libjpeg-turbo optional
+* [ ] make aws s3 optionnal
+* [ ] add tests
+* [ ] add documentation
+* [ ] memory profiling
+* [ ] Add an http endpoint that redirect to the image
+
 ## Dependencies
 
 Before you import library, you need to install libjpeg-turbo.
@@ -88,3 +97,4 @@ curl 127.0.0.1:9900/thumbs/ -d '{"srcImage": "s3://nsq-thumb-src-test/baignade.j
 
 [{"Thumbnail":{"Scheme":"s3","Opaque":"","User":null,"Host":"nsq-thumb-dst-test","Path":"/baignade_s467x350.jpg","RawQuery":"","Fragment":""},"Err":null}]
 ```
+
