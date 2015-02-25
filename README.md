@@ -41,7 +41,7 @@ nsq_tail -lookupd-http-address=127.0.0.1:4161 -topic=test
 export AWS_SECRET_ACCESS_KEY=<secret>
 export AWS_ACCESS_KEY_ID=<secret>
 
-go install github.com/yml/nsqthumbnailer/... && nsq_thumbnailer --topic=test --lookupd-http-address=127.0.0.1:4161 --concurrency=10
+go install github.com/yml/thumbnailer/... && nsq_thumbnailer --topic=test --lookupd-http-address=127.0.0.1:4161 --concurrency=10
 ```
 
 
@@ -50,7 +50,7 @@ go install github.com/yml/nsqthumbnailer/... && nsq_thumbnailer --topic=test --l
 #### local file system
 
 ```
-curl -d '{"srcImage": "file://tmp/nsqthumbnailer/src/image1.jpg, "opts": [{"rect":{"min":[200, 200], "max":[600,600]},"width":150, "height":0}, {"width":250, "height":0}, {"width":0, "height":350}], "dstFolder":""file://tmp/nsqthumbnailer/tumbs}' 'http://127.0.0.1:4151/put?topic=test'
+curl -d '{"srcImage": "file://tmp/nsq-thumb-src-test/image1.jpg, "opts": [{"rect":{"min":[200, 200], "max":[600,600]},"width":150, "height":0}, {"width":250, "height":0}, {"width":0, "height":350}], "dstFolder":""file://tmp/nsq-thumb-dst-test/}' 'http://127.0.0.1:4151/put?topic=test'
 ```
 
 #### S3
@@ -69,7 +69,7 @@ http thumbnailer
 export AWS_SECRET_ACCESS_KEY=<secret>
 export AWS_ACCESS_KEY_ID=<secret>
 
-go install github.com/yml/nsqthumbnailer/... && http_thumbnailer -dstFolder=file:///tmp/nsq-thumb-dst-test -srcFolder=file:///tmp/nsq-thumb-src-test 
+go install github.com/yml/thumbnailer/... && http_thumbnailer -dstFolder=file:///tmp/nsq-thumb-dst-test -srcFolder=file:///tmp/nsq-thumb-src-test 
 ```
 
 ### send http request to generate thumbnails

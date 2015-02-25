@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yml/nsqthumbnailer"
+	"github.com/yml/thumbnailer"
 )
 
 var (
@@ -24,9 +24,9 @@ var (
 	URLNames  = make(map[string]string)
 )
 
-func processThumbResults(tm nsqthumbnailer.ThumbnailerMessage) ([]nsqthumbnailer.ThumbnailResult, error) {
+func processThumbResults(tm thumbnailer.ThumbnailerMessage) ([]thumbnailer.ThumbnailResult, error) {
 	resultChan := tm.GenerateThumbnails()
-	results := make([]nsqthumbnailer.ThumbnailResult, 0)
+	results := make([]thumbnailer.ThumbnailResult, 0)
 	for result := range resultChan {
 		results = append(results, result)
 	}
@@ -58,12 +58,12 @@ func ThumbHandler(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, URLNames["/thumb/"])
 		fmt.Sscanf(path, "%dx%d/%s", &width, &height, &filename)
 		fmt.Printf("[DEBUG] width: %d , height: %d, filename: %s ", width, height, filename)
-		opt := nsqthumbnailer.ThumbnailOpt{
+		opt := thumbnailer.ThumbnailOpt{
 			Width:  width,
 			Height: height,
 		}
 		// build the thumbReg and generate the thumb and return it or redirect
-		tm := nsqthumbnailer.ThumbnailerMessage{}
+		tm := thumbnailer.ThumbnailerMessage{}
 		// TODO (yml) generalized this approach to support other scheme
 		// Assume file:// to start
 		// there is security implication that need to be verified here.
@@ -119,7 +119,7 @@ func ThumbsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("thumbReq: %s\n", thumbReq.String())
 
-	tm := nsqthumbnailer.ThumbnailerMessage{}
+	tm := thumbnailer.ThumbnailerMessage{}
 	err := json.Unmarshal(thumbReq.Bytes(), &tm)
 	if err != nil {
 		err = errors.New(fmt.Sprintf("ERROR: failed to unmarshal `thumbReq` into a thumbnailerMessage - %s", err))

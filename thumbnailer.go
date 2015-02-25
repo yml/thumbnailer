@@ -1,4 +1,4 @@
-package nsqthumbnailer
+package thumbnailer
 
 import (
 	"bytes"

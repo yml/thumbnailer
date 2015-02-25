@@ -13,7 +13,7 @@ import (
 
 	"github.com/bitly/go-nsq"
 	"github.com/bitly/nsq/util"
-	"github.com/yml/nsqthumbnailer"
+	"github.com/yml/thumbnailer"
 )
 
 var (
@@ -39,7 +39,7 @@ type thumbnailerHandler struct {
 }
 
 func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
-	tm := nsqthumbnailer.ThumbnailerMessage{}
+	tm := thumbnailer.ThumbnailerMessage{}
 	err := json.Unmarshal(m.Body, &tm)
 	if err != nil {
 		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
@@ -47,7 +47,7 @@ func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
 	}
 
 	resultChan := tm.GenerateThumbnails()
-	results := make([]nsqthumbnailer.ThumbnailResult, 0)
+	results := make([]thumbnailer.ThumbnailResult, 0)
 	for result := range resultChan {
 		results = append(results, result)
 	}

@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yml/nsqthumbnailer"
+	"github.com/yml/thumbnailer"
 )
 
 var (
@@ -25,7 +25,7 @@ var (
 	thumbOpts         string
 	postURL           string
 	preserveStructure bool
-	tOpts             []nsqthumbnailer.ThumbnailOpt
+	tOpts             []thumbnailer.ThumbnailOpt
 )
 
 func init() {
@@ -47,7 +47,7 @@ func thumbnailFileRequest(file string) error {
 	} else {
 		dstPath = dstDir
 	}
-	tmJson, err := json.Marshal(nsqthumbnailer.ThumbnailerMessage{
+	tmJson, err := json.Marshal(thumbnailer.ThumbnailerMessage{
 		SrcImage:  fmt.Sprintf("file://%s", file),
 		DstFolder: dstPath,
 		Opts:      tOpts,
