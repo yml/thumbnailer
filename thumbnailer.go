@@ -1,4 +1,4 @@
-package nsqthumbnailer
+package thumbnailer
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -236,6 +237,11 @@ type ThumbnailerMessage struct {
 	Opts      []ThumbnailOpt `json:"opts"`
 }
 
+type ThumbnailResult struct {
+	Thumbnail *url.URL
+	Err       error
+}
+
 func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.URL, error) {
 	if opt.DstImage == "" {
 		fURL, err := url.Parse(tm.DstFolder)
@@ -293,7 +299,7 @@ func (tm *ThumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	return imaging.Resize(src, maxW, maxH, imaging.CatmullRom)
 }
 
-func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *url.URL, img image.Image, opt ThumbnailOpt) {
+func (tm *ThumbnailerMessage) generateThumbnail(srcURL *url.URL, img image.Image, opt ThumbnailOpt) ThumbnailResult {
 	timerStart := time.Now()
 	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
@@ -326,68 +332,67 @@ func (tm *ThumbnailerMessage) generateThumbnail(errorChan chan error, srcURL *ur
 	thumb, err := NewImageOpenSaver(thumbURL)
 	if err != nil {
 		log.Println("An error occured while creating an instance of ImageOpenSaver for", thumbURL, err)
-		errorChan <- err
-		return
+		return ThumbnailResult{nil, err}
 	}
 	err = thumb.Save(thumbImg)
 	if err != nil {
 		log.Println("An error occured while saving,", thumbURL, err)
-		errorChan <- err
-		return
+		return ThumbnailResult{nil, err}
 	}
-	errorChan <- nil
 	timerEnd := time.Now()
 	log.Println("thumb :", thumbURL, " saved in : ", timerEnd.Sub(timerSaveStart))
-	return
+	return ThumbnailResult{thumbURL, nil}
 }
 
-func (tm *ThumbnailerMessage) GenerateThumbnails(errChan chan error) {
-	sURL, err := url.Parse(tm.SrcImage)
-	if err != nil {
-		log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
-		errChan <- err
-		return
-	}
-	src, err := NewImageOpenSaver(sURL)
-	if err != nil {
-		log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
-		errChan <- err
-		return
-	}
-	img, err := src.Open()
-	if err != nil {
-		log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
-		errChan <- err
-		return
-	}
-	// From now on we will deal with an NRGBA image
-	img = toNRGBA(img)
-
-	var maxThumb image.Image
-	if len(tm.Opts) > 1 {
-		// The resized image will be used to generate all the thumbs
-		maxThumb = tm.maxThumbnail(img)
-	}
-
-	errorChan := make(chan error, 1)
-	for _, opt := range tm.Opts {
-		if opt.Rect == nil && maxThumb != nil {
-			go tm.generateThumbnail(errorChan, sURL, maxThumb, opt)
-		} else {
-			// we can't use the maxThumb optimization
-			go tm.generateThumbnail(errorChan, sURL, img, opt)
+func (tm *ThumbnailerMessage) GenerateThumbnails() <-chan ThumbnailResult {
+	resultChan := make(chan ThumbnailResult)
+	go func(rc chan<- ThumbnailResult) {
+		defer close(rc)
+		sURL, err := url.Parse(tm.SrcImage)
+		if err != nil {
+			log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
 		}
-	}
-	var firstErr error
-	for i := 0; i < len(tm.Opts); i++ {
-		err := <-errorChan
-		if err != nil && firstErr == nil {
-			// We preserve the first error
-			firstErr = err
+		src, err := NewImageOpenSaver(sURL)
+		if err != nil {
+			log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
 		}
-	}
-	errChan <- firstErr
-	return
+		img, err := src.Open()
+		if err != nil {
+			log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
+			rc <- ThumbnailResult{nil, err}
+			return
+		}
+		// From now on we will deal with an NRGBA image
+		img = toNRGBA(img)
+
+		var maxThumb image.Image
+		if len(tm.Opts) > 1 {
+			// The resized image will be used to generate all the thumbs
+			maxThumb = tm.maxThumbnail(img)
+		}
+
+		var wg sync.WaitGroup
+		for _, opt := range tm.Opts {
+			wg.Add(1)
+			// TODO (yml) cap the number goroutines
+			go func(out chan<- ThumbnailResult, opt ThumbnailOpt) {
+				defer wg.Done()
+				if opt.Rect == nil && maxThumb != nil {
+					out <- tm.generateThumbnail(sURL, maxThumb, opt)
+				} else {
+					// we can't use the maxThumb optimization
+					out <- tm.generateThumbnail(sURL, img, opt)
+				}
+			}(rc, opt)
+		}
+		wg.Wait()
+		return
+	}(resultChan)
+	return resultChan
 }
 
 func (tm *ThumbnailerMessage) DeleteImage() error {

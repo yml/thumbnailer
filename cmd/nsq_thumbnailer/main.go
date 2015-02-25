@@ -13,7 +13,7 @@ import (
 
 	"github.com/bitly/go-nsq"
 	"github.com/bitly/nsq/util"
-	"github.com/yml/nsqthumbnailer"
+	"github.com/yml/thumbnailer"
 )
 
 var (
@@ -39,18 +39,24 @@ type thumbnailerHandler struct {
 }
 
 func (th *thumbnailerHandler) HandleMessage(m *nsq.Message) error {
-	tm := nsqthumbnailer.ThumbnailerMessage{}
+	tm := thumbnailer.ThumbnailerMessage{}
 	err := json.Unmarshal(m.Body, &tm)
 	if err != nil {
 		log.Printf("ERROR: failed to unmarshal m.Body into a thumbnailerMessage - %s", err)
 		return err
 	}
-	errChan := make(chan error)
-	go tm.GenerateThumbnails(errChan)
-	err = <-errChan
-	if err != nil {
-		return err
+
+	resultChan := tm.GenerateThumbnails()
+	results := make([]thumbnailer.ThumbnailResult, 0)
+	for result := range resultChan {
+		results = append(results, result)
 	}
+	for _, r := range results {
+		if r.Err != nil {
+			return fmt.Errorf("Error: At least one thumb generation failed - %s", r.Err, results)
+		}
+	}
+
 	if tm.DeleteSrc == true {
 		fmt.Println("Deleting", tm.SrcImage)
 		err = tm.DeleteImage()
