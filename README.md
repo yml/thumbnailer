@@ -1,4 +1,4 @@
-# thumbnailer
+# Thumbnailer
 
 This package is still work in progress. The intend is to provides tools to create thumbnails :
 
