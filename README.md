@@ -7,7 +7,7 @@ This package is still work in progress. The intend is to provides tools to creat
 
 ## TODO
 
-* [ ] make libjpeg-turbo optional
+* [x] make libjpeg-turbo optional
 * [ ] make aws s3 optionnal
 * [ ] add tests
 * [ ] add documentation
@@ -16,11 +16,17 @@ This package is still work in progress. The intend is to provides tools to creat
 
 ## Dependencies
 
-Before you import library, you need to install libjpeg-turbo.
+Thumbnailer has an optional dependency on libjpeg-
+* On Ubuntu: sudo apt-get install libjpeg-turbo8-dev.
+* On Mac OS X: brew install libjpeg-turbo
 
-On Ubuntu: sudo apt-get install libjpeg-turbo8-dev.
+This feature is guarded by a build tag called `libjpegturbo`
 
-On Mac OS X: brew install libjpeg-turbo
+```
+go install -tags libjpegturbo github.com/yml/thumbnailer/...
+```
+
+**Note:** Don't forget to clean up the pkg dir between build
 
 ## How to use it
 
