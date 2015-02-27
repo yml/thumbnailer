@@ -49,6 +49,23 @@ func Test_generateThumbnail(t *testing.T) {
 	}
 }
 
+func Benchmark_generateThumbnail(b *testing.B) {
+	tm := testThumbnailerMessage()
+	src, err := tm.Open()
+	if err != nil {
+		b.Fatalf("Failed to open tm.SrcImage: %v", err)
+	}
+	var result ThumbnailResult
+	for n := 0; n < b.N; n++ {
+		result = tm.generateThumbnail(src, tm.Opts[0])
+	}
+	// Clean up the generated thumb
+	if err := os.Remove(result.Thumbnail.Path); err != nil {
+		b.Fatal("Failed to delete the generated thumb:", err)
+	}
+
+}
+
 func Test_GenerateThumbnails(t *testing.T) {
 	tm := testThumbnailerMessage()
 	results := tm.GenerateThumbnails()
