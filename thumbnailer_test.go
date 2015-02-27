@@ -42,7 +42,11 @@ func Test_generateThumbnail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open tm.SrcImage: %v", err)
 	}
-	tm.generateThumbnail(src, tm.Opts[0])
+	result := tm.generateThumbnail(src, tm.Opts[0])
+	// Clean up the generated thumb
+	if err := os.Remove(result.Thumbnail.Path); err != nil {
+		t.Fatal("Failed to delete the generated thumb:", err)
+	}
 }
 
 func Test_GenerateThumbnails(t *testing.T) {
