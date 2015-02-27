@@ -8,8 +8,8 @@ This package is still work in progress. The intend is to provides tools to creat
 ## TODO
 
 * [x] make libjpeg-turbo optional
+* [x] add tests
 * [ ] make aws s3 optionnal
-* [ ] add tests
 * [ ] add documentation
 * [ ] memory profiling
 * [ ] Add an http endpoint that redirect to the image
