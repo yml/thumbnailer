@@ -7,7 +7,11 @@ import (
 	"testing"
 )
 
-func TestGenerateThumbnails(t *testing.T) {
+// func Test_generateThumbnail(t *testing.T){
+//
+// }
+
+func Test_GenerateThumbnails(t *testing.T) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal("Failed to get the current directory: %s", err)

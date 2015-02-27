@@ -188,7 +188,8 @@ type ThumbnailResult struct {
 	Err       error
 }
 
-func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.URL, error) {
+func (tm *ThumbnailerMessage) thumbURL(opt ThumbnailOpt) (*url.URL, error) {
+	baseName := filepath.Base(tm.SrcImage)
 	if opt.DstImage == "" {
 		fURL, err := url.Parse(tm.DstFolder)
 		if err != nil {
@@ -218,6 +219,18 @@ func (tm *ThumbnailerMessage) thumbURL(baseName string, opt ThumbnailOpt) (*url.
 	}
 }
 
+func (tm *ThumbnailerMessage) Open() (image.Image, error) {
+	sURL, err := url.Parse(tm.SrcImage)
+	if err != nil {
+		return nil, err
+	}
+	src, err := NewImageOpenSaver(sURL)
+	if err != nil {
+		return nil, err
+	}
+	return src.Open()
+}
+
 // Resize the src image to the biggest thumb sizes in tm.opts.
 func (tm *ThumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	maxW, maxH := 0, 0
@@ -245,7 +258,7 @@ func (tm *ThumbnailerMessage) maxThumbnail(src image.Image) image.Image {
 	return imaging.Resize(src, maxW, maxH, imaging.CatmullRom)
 }
 
-func (tm *ThumbnailerMessage) generateThumbnail(srcURL *url.URL, img image.Image, opt ThumbnailOpt) ThumbnailResult {
+func (tm *ThumbnailerMessage) generateThumbnail(img image.Image, opt ThumbnailOpt) ThumbnailResult {
 	timerStart := time.Now()
 	var thumbImg *image.NRGBA
 	if opt.Rect != nil {
@@ -267,7 +280,7 @@ func (tm *ThumbnailerMessage) generateThumbnail(srcURL *url.URL, img image.Image
 		opt.Height = thumBounds.Max.Y
 	}
 
-	thumbURL, err := tm.thumbURL(filepath.Base(srcURL.Path), opt)
+	thumbURL, err := tm.thumbURL(opt)
 	if err != nil {
 		log.Println("An error occured while contstructing thumbURL for", tm.SrcImage, err)
 	}
@@ -294,19 +307,7 @@ func (tm *ThumbnailerMessage) GenerateThumbnails() <-chan ThumbnailResult {
 	resultChan := make(chan ThumbnailResult)
 	go func(rc chan<- ThumbnailResult) {
 		defer close(rc)
-		sURL, err := url.Parse(tm.SrcImage)
-		if err != nil {
-			log.Println("An error occured while parsing the SrcImage", tm.SrcImage, err)
-			rc <- ThumbnailResult{nil, err}
-			return
-		}
-		src, err := NewImageOpenSaver(sURL)
-		if err != nil {
-			log.Println("An error occured while creating an instance of ImageOpenSaver", tm.SrcImage, err)
-			rc <- ThumbnailResult{nil, err}
-			return
-		}
-		img, err := src.Open()
+		img, err := tm.Open()
 		if err != nil {
 			log.Println("An error occured while opening SrcImage", tm.SrcImage, err)
 			rc <- ThumbnailResult{nil, err}
@@ -328,10 +329,10 @@ func (tm *ThumbnailerMessage) GenerateThumbnails() <-chan ThumbnailResult {
 			go func(out chan<- ThumbnailResult, opt ThumbnailOpt) {
 				defer wg.Done()
 				if opt.Rect == nil && maxThumb != nil {
-					out <- tm.generateThumbnail(sURL, maxThumb, opt)
+					out <- tm.generateThumbnail(maxThumb, opt)
 				} else {
 					// we can't use the maxThumb optimization
-					out <- tm.generateThumbnail(sURL, img, opt)
+					out <- tm.generateThumbnail(img, opt)
 				}
 			}(rc, opt)
 		}
